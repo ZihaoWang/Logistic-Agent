@@ -7,10 +7,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.callback_context import CallbackContext
 from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_request import LlmRequest
+from google.adk.models.llm_response import LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from opentelemetry.trace import Span
 
 from agent_platform.mcp.registry import (
     CHECK_SHIPPING_POLICY,
@@ -22,6 +26,8 @@ from agent_platform.mcp.registry import (
 )
 from agent_platform.models.approval import ApprovalRequest
 from agent_platform.models.execution import ExecutionContext
+from agent_platform.observability.metrics import record_model_call
+from agent_platform.observability.tracing import activate_span, deactivate_span, set_span_attributes
 from agent_platform.persistence.base import RunStore
 from agent_platform.runtime.base import AgentRequest, AgentResponse
 from agent_platform.runtime.messages import message_for_approval_required, message_for_tool_result
@@ -45,6 +51,9 @@ If a write action requires approval, explain the exact action and wait.
 """
 
 
+_SERVICE = "agent-web"
+
+
 @dataclass
 class RunSessionState:
     """Mutable state shared with ADK function tools during one run."""
@@ -57,6 +66,11 @@ class RunSessionState:
     pending_tool_call: dict[str, Any] | None = None
     failed: bool = False
     failure_message: str | None = None
+    model_span: Span | None = None
+    model_span_token: object | None = None
+    model_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class AdkAgentRuntime:
@@ -74,6 +88,7 @@ class AdkAgentRuntime:
         self._executor = executor
         self._run_store = run_store
         resolved_settings = settings or RuntimeSettings()
+        self._settings = resolved_settings
         self._model: str | BaseLlm = model or resolved_settings.model_name
         self._model_name = self._model if isinstance(self._model, str) else self._model.model
 
@@ -90,6 +105,8 @@ class AdkAgentRuntime:
             model=self._model,
             instruction=AGENT_INSTRUCTION,
             tools=tools,
+            before_model_callback=self._before_model_callback(session_state),
+            after_model_callback=self._after_model_callback(session_state),
         )
         session_service = InMemorySessionService()
         runner = Runner(
@@ -103,7 +120,6 @@ class AdkAgentRuntime:
         )
 
         final_text = ""
-        model_calls = 0
         async for event in runner.run_async(
             user_id=context.delegation.actor.actor_id,
             session_id=session.id,
@@ -116,13 +132,15 @@ class AdkAgentRuntime:
                 for part in event.content.parts or []:
                     if part.text:
                         final_text = part.text
-                if event.usage_metadata is not None:
-                    model_calls += 1
-
             if session_state.halt_for_approval or session_state.failed:
                 break
 
-        await self._record_model_usage(context.run_id, model_calls)
+        await self._record_model_usage(
+            context.run_id,
+            session_state.model_calls,
+            session_state.input_tokens,
+            session_state.output_tokens,
+        )
 
         if session_state.halt_for_approval and session_state.pending_approval is not None:
             cost = _expected_cost_from_tool_call(session_state.pending_tool_call)
@@ -161,6 +179,76 @@ class AdkAgentRuntime:
             message=final_text or "I completed the request.",
             status="completed",
         )
+
+    def _before_model_callback(
+        self,
+        session_state: RunSessionState,
+    ) -> Any:
+        """Return ADK callback that opens a model.generate span."""
+
+        def callback(_ctx: CallbackContext, _request: LlmRequest) -> LlmResponse | None:
+            span, token = activate_span(
+                "model.generate",
+                service=_SERVICE,
+                attributes={
+                    "run.id": session_state.context.run_id,
+                    "agent.id": session_state.context.agent_id,
+                    "model.name": self._model_name,
+                },
+            )
+            session_state.model_span = span
+            session_state.model_span_token = token
+            return None
+
+        return callback
+
+    def _after_model_callback(
+        self,
+        session_state: RunSessionState,
+    ) -> Any:
+        """Return ADK callback that closes model.generate and records metrics."""
+
+        def callback(_ctx: CallbackContext, response: LlmResponse) -> LlmResponse | None:
+            input_tokens = 0
+            output_tokens = 0
+            usage = response.usage_metadata
+            if usage is not None:
+                input_tokens = int(getattr(usage, "prompt_token_count", 0) or 0)
+                output_tokens = int(getattr(usage, "candidates_token_count", 0) or 0)
+                session_state.model_calls += 1
+                session_state.input_tokens += input_tokens
+                session_state.output_tokens += output_tokens
+
+            estimated_cost: float | None = None
+            if input_tokens or output_tokens:
+                estimated_cost = (
+                    input_tokens / 1000 * self._settings.model_input_cost_per_1k_tokens_usd
+                    + output_tokens / 1000 * self._settings.model_output_cost_per_1k_tokens_usd
+                )
+
+            if session_state.model_span is not None:
+                attrs: dict[str, object] = {
+                    "model.input_tokens": input_tokens,
+                    "model.output_tokens": output_tokens,
+                }
+                if estimated_cost is not None:
+                    attrs["estimated_cost_usd"] = round(estimated_cost, 6)
+                set_span_attributes(session_state.model_span, attrs)
+                if session_state.model_span_token is not None:
+                    deactivate_span(session_state.model_span, session_state.model_span_token)
+                session_state.model_span = None
+                session_state.model_span_token = None
+
+            if session_state.model_calls > 0:
+                record_model_call(
+                    service=_SERVICE,
+                    model=self._model_name,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
+            return None
+
+        return callback
 
     def _build_tools(self, session_state: RunSessionState) -> list[Any]:
         """Build ADK function tools filtered by delegation scopes."""
@@ -294,15 +382,30 @@ class AdkAgentRuntime:
 
         return json.dumps({"status": "success", "data": result.data}, default=str)
 
-    async def _record_model_usage(self, run_id: str, model_calls: int) -> None:
+    async def _record_model_usage(
+        self,
+        run_id: str,
+        model_calls: int,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> None:
         """Increment model call counters on the run."""
         if model_calls <= 0:
             return
         run = await self._run_store.get_run(run_id)
         if run is None:
             return
+        estimated_cost = (
+            input_tokens / 1000 * self._settings.model_input_cost_per_1k_tokens_usd
+            + output_tokens / 1000 * self._settings.model_output_cost_per_1k_tokens_usd
+        )
         usage = run.usage.model_copy(
-            update={"model_calls": run.usage.model_calls + model_calls},
+            update={
+                "model_calls": run.usage.model_calls + model_calls,
+                "input_tokens": run.usage.input_tokens + input_tokens,
+                "output_tokens": run.usage.output_tokens + output_tokens,
+                "estimated_cost_usd": run.usage.estimated_cost_usd + estimated_cost,
+            },
         )
         await self._run_store.update_run(
             run.model_copy(

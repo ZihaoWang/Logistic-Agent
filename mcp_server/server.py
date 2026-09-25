@@ -17,6 +17,7 @@ from agent_platform.mcp.registry import (
 )
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
+from agent_platform.observability import configure_observability
 from agent_platform.persistence.memory import MemoryApprovalStore, MemoryAuditStore, MemoryRunStore
 from agent_platform.policy.engine import PolicyEngine
 from contracts.routing import RouteConstraints
@@ -241,6 +242,7 @@ def run_http(settings: McpServerSettings | None = None) -> None:
         settings: Optional settings override.
     """
     resolved_settings = settings or McpServerSettings()
+    configure_observability("mcp-gateway")
     server = create_mcp(settings=resolved_settings)
     server.run(transport="http", host=resolved_settings.host, port=resolved_settings.port)
 

@@ -4,9 +4,16 @@ from typing import Any
 
 import httpx
 
+from agent_platform.observability.tracing import (
+    inject_trace_headers,
+    set_span_attributes,
+    start_span,
+)
 from contracts.backend import RerouteRequestBody
 from contracts.routing import FindRoutesInput, RouteConstraints
 from mcp_server.backend.base import BackendCallError
+
+_SERVICE = "mcp-gateway"
 
 
 class HttpLogisticsClient:
@@ -25,6 +32,7 @@ class HttpLogisticsClient:
         method: str,
         path: str,
         *,
+        span_name: str,
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Send one HTTP request and return JSON on success.
@@ -32,6 +40,7 @@ class HttpLogisticsClient:
         Parameters:
             method: HTTP method.
             path: Request path.
+            span_name: OpenTelemetry span name for this backend call.
             json: Optional JSON request body.
 
         Returns:
@@ -40,31 +49,49 @@ class HttpLogisticsClient:
         Raises:
             BackendCallError: On transport failure or non-success HTTP status.
         """
-        try:
-            response = await self._client.request(method, path, json=json)
-        except httpx.RequestError as exc:
-            raise BackendCallError(status_code=0, body=str(exc)) from exc
-
-        if response.status_code >= 400:
-            body: Any
+        with start_span(span_name, service=_SERVICE, attributes={"http.route": path}) as span:
+            headers = inject_trace_headers({})
             try:
-                body = response.json()
-            except ValueError:
-                body = response.text
-            raise BackendCallError(status_code=response.status_code, body=body)
+                response = await self._client.request(
+                    method,
+                    path,
+                    json=json,
+                    headers=headers,
+                )
+            except httpx.RequestError as exc:
+                set_span_attributes(span, {"backend.status_code": 0})
+                raise BackendCallError(status_code=0, body=str(exc)) from exc
 
-        parsed = response.json()
-        if not isinstance(parsed, dict):
-            raise BackendCallError(status_code=response.status_code, body=parsed)
-        return parsed
+            set_span_attributes(span, {"backend.status_code": response.status_code})
+
+            if response.status_code >= 400:
+                body: Any
+                try:
+                    body = response.json()
+                except ValueError:
+                    body = response.text
+                raise BackendCallError(status_code=response.status_code, body=body)
+
+            parsed = response.json()
+            if not isinstance(parsed, dict):
+                raise BackendCallError(status_code=response.status_code, body=parsed)
+            return parsed
 
     async def get_shipment(self, shipment_id: str) -> dict[str, Any]:
         """Fetch one shipment by id."""
-        return await self._request("GET", f"/v1/shipments/{shipment_id}")
+        return await self._request(
+            "GET",
+            f"/v1/shipments/{shipment_id}",
+            span_name="backend.get_shipment",
+        )
 
     async def get_port_status(self, port_code: str) -> dict[str, Any]:
         """Fetch port status by port code."""
-        return await self._request("GET", f"/v1/ports/{port_code}/status")
+        return await self._request(
+            "GET",
+            f"/v1/ports/{port_code}/status",
+            span_name="backend.get_port_status",
+        )
 
     async def find_routes(
         self,
@@ -79,6 +106,7 @@ class HttpLogisticsClient:
         return await self._request(
             "POST",
             "/v1/routes/search",
+            span_name="backend.search_routes",
             json=payload.model_dump(mode="json"),
         )
 
@@ -87,6 +115,7 @@ class HttpLogisticsClient:
         return await self._request(
             "POST",
             "/v1/routes/cost",
+            span_name="backend.estimate_cost",
             json={"shipment_id": shipment_id, "route_id": route_id},
         )
 
@@ -95,6 +124,7 @@ class HttpLogisticsClient:
         return await self._request(
             "POST",
             "/v1/policy/check",
+            span_name="backend.check_shipping_policy",
             json={"shipment_id": shipment_id, "route_id": route_id},
         )
 
@@ -107,5 +137,6 @@ class HttpLogisticsClient:
         return await self._request(
             "POST",
             f"/v1/shipments/{shipment_id}/reroute",
+            span_name="backend.request_reroute",
             json=body.model_dump(mode="json"),
         )

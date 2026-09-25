@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -21,7 +22,14 @@ from agent_platform.mcp.registry import REQUEST_REROUTE, TOOL_REGISTRY, get_poli
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.policy import RetryPolicy, ToolPolicy
 from agent_platform.models.tools import ToolResult
+from agent_platform.observability.logging import get_logger
+from agent_platform.observability.metrics import record_tool_call, record_tool_retry
+from agent_platform.observability.redaction import safe_arguments
+from agent_platform.observability.tracing import set_span_attributes, set_span_error, start_span
 from agent_platform.policy.rules import scopes_satisfied
+
+_SERVICE = "agent-web"
+_log = get_logger(_SERVICE)
 
 
 @dataclass
@@ -140,28 +148,116 @@ class GovernedToolExecutor:
 
         for attempt in range(1, max_attempts + 1):
             if self._deadline_exceeded(context):
-                return self._timeout_result(tool_name, attempt)
+                timeout = self._timeout_result(tool_name, attempt)
+                self._record_tool_outcome(tool_name, timeout, attempt, 0.0, context)
+                return timeout
 
-            result = await self._mcp_client.call(tool_name, arguments, context=context)
-            result = result.model_copy(
-                update={
-                    "metadata": result.metadata.model_copy(update={"attempt": attempt}),
+            attempt_started = time.perf_counter()
+            with start_span(
+                f"mcp.{tool_name}",
+                service=_SERVICE,
+                attributes={
+                    "run.id": context.run_id,
+                    "thread.id": context.thread_id,
+                    "agent.id": context.agent_id,
+                    "tool.name": tool_name,
+                    "tool.attempt": attempt,
                 },
-            )
-            last_result = result
+            ) as span:
+                result = await self._mcp_client.call(tool_name, arguments, context=context)
+                result = result.model_copy(
+                    update={
+                        "metadata": result.metadata.model_copy(update={"attempt": attempt}),
+                    },
+                )
+                set_span_attributes(
+                    span,
+                    {"tool.status": result.status},
+                )
+                if result.status in {"failed", "denied"}:
+                    set_span_error(span, result.error.code if result.error else result.status)
+                duration = time.perf_counter() - attempt_started
+                last_result = result
 
-            if not self._should_retry(result, policy, attempt, max_attempts):
-                return result
+                if not self._should_retry(result, policy, attempt, max_attempts):
+                    self._record_tool_outcome(
+                        tool_name,
+                        result,
+                        attempt,
+                        duration,
+                        context,
+                        arguments=arguments,
+                    )
+                    return result
+
+                reason = _retry_reason(result)
+                record_tool_retry(service=_SERVICE, tool_name=tool_name)
+                _log.warning(
+                    "tool.retry",
+                    run_id=context.run_id,
+                    tool=tool_name,
+                    attempt=attempt,
+                    reason=reason,
+                    **safe_arguments(tool_name, arguments),
+                )
 
             delay = self._backoff_seconds(retry, attempt)
             if self._deadline_within(context, delay):
                 await asyncio.sleep(delay)
             else:
+                self._record_tool_outcome(
+                    tool_name,
+                    result,
+                    attempt,
+                    time.perf_counter() - attempt_started,
+                    context,
+                    arguments=arguments,
+                )
                 return result
 
         if last_result is not None:
+            self._record_tool_outcome(
+                tool_name,
+                last_result,
+                max_attempts,
+                0.0,
+                context,
+                arguments=arguments,
+            )
             return last_result
-        return self._timeout_result(tool_name, max_attempts)
+        timeout = self._timeout_result(tool_name, max_attempts)
+        self._record_tool_outcome(tool_name, timeout, max_attempts, 0.0, context)
+        return timeout
+
+    def _record_tool_outcome(
+        self,
+        tool_name: str,
+        result: ToolResult[Any],
+        attempt: int,
+        duration_seconds: float,
+        context: ExecutionContext,
+        *,
+        arguments: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit metrics and a completion log for one tool attempt."""
+        failed = result.status in {"failed", "denied"}
+        record_tool_call(
+            service=_SERVICE,
+            tool_name=tool_name,
+            status=result.status,
+            duration_seconds=duration_seconds,
+            failed=failed,
+        )
+        if failed:
+            _log.warning(
+                "tool.failed",
+                run_id=context.run_id,
+                tool=tool_name,
+                attempt=attempt,
+                status=result.status,
+                error_code=result.error.code if result.error else None,
+                **(safe_arguments(tool_name, arguments) if arguments else {}),
+            )
 
     def _should_retry(
         self,
@@ -240,3 +336,17 @@ class GovernedToolExecutor:
             ),
             attempt=attempt,
         )
+
+
+def _retry_reason(result: ToolResult[Any]) -> str:
+    """Build a low-cardinality retry reason for logs."""
+    if result.error is None:
+        return "UNKNOWN"
+    status_code = _status_code_from_details(result.error.details)
+    if status_code == 503:
+        return "HTTP_503"
+    if status_code == 429:
+        return "HTTP_429"
+    if status_code >= 500:
+        return f"HTTP_{status_code}"
+    return result.error.code

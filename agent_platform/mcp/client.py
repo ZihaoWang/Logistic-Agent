@@ -16,6 +16,10 @@ from agent_platform.mcp.protocol import (
 from agent_platform.mcp.registry import TOOL_REGISTRY, parse_tool_result_data
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
+from agent_platform.observability.metrics import record_contract_validation_failure
+from agent_platform.observability.tracing import mark_current_span_error
+
+_SERVICE = "agent-web"
 
 
 class McpClient:
@@ -151,6 +155,8 @@ class McpClient:
             try:
                 parse_tool_result_data(name, result.data)
             except ValidationError as exc:
+                record_contract_validation_failure(service=_SERVICE, error_category="contract")
+                mark_current_span_error("contract output invalid")
                 return build_failed_result(
                     name,
                     result.metadata.latency_ms,

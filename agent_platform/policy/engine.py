@@ -26,6 +26,12 @@ from agent_platform.models.audit import AuditEvent
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.policy import PolicyDecision
 from agent_platform.models.run import RunState
+from agent_platform.observability.metrics import (
+    record_approval_request,
+    record_budget_exceeded,
+    record_policy_denial,
+)
+from agent_platform.observability.tracing import current_trace_id, set_span_attributes, start_span
 from agent_platform.persistence.base import ApprovalStore, AuditStore, RunStore
 from agent_platform.policy.approvals import create_approval_request, evaluate_approval_match
 from agent_platform.policy.rules import (
@@ -39,6 +45,8 @@ from agent_platform.policy.rules import (
 from agent_platform.policy.settings import PolicySettings
 
 Clock = Callable[[], datetime]
+
+_SERVICE = "mcp-gateway"
 
 
 class PolicyEngine:
@@ -67,6 +75,33 @@ class PolicyEngine:
         context: ExecutionContext,
     ) -> PolicyDecision:
         """Evaluate one tool call and return a policy decision."""
+        tool_name = tool.name
+        with start_span(
+            f"policy.{tool_name}",
+            service=_SERVICE,
+            attributes={
+                "run.id": context.run_id,
+                "agent.id": context.agent_id,
+                "tool.name": tool_name,
+            },
+        ) as span:
+            decision = await self._evaluate_tool_call_inner(tool, args, context)
+            set_span_attributes(
+                span,
+                {
+                    "policy.decision": decision.decision,
+                    "approval.required": decision.decision == "require_approval",
+                },
+            )
+            return decision
+
+    async def _evaluate_tool_call_inner(
+        self,
+        tool: RegisteredTool,
+        args: BaseModel,
+        context: ExecutionContext,
+    ) -> PolicyDecision:
+        """Run policy checks and return a decision."""
         now = self._clock()
         tool_name = tool.name
 
@@ -77,6 +112,7 @@ class PolicyEngine:
                 matched_rules=["delegation-expiry"],
             )
             await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+            record_policy_denial(service=_SERVICE, tool_name=tool_name)
             return decision
 
         if not scopes_satisfied(tool.policy.required_scopes, context.delegation.scopes):
@@ -88,6 +124,7 @@ class PolicyEngine:
                 missing_scopes=missing,
             )
             await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+            record_policy_denial(service=_SERVICE, tool_name=tool_name)
             return decision
 
         run = await self._run_store.get_run(context.run_id)
@@ -98,6 +135,7 @@ class PolicyEngine:
                 matched_rules=["run-exists"],
             )
             await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+            record_policy_denial(service=_SERVICE, tool_name=tool_name)
             return decision
 
         if budget_would_be_exceeded(run, context.budget, now):
@@ -107,6 +145,7 @@ class PolicyEngine:
                 matched_rules=["run-budget"],
             )
             await self._audit(context, tool_name, "budget.exceeded", decision.reason_code)
+            record_budget_exceeded(service=_SERVICE, tool_name=tool_name)
             return decision
 
         if reroute_cost_exceeds_limit(
@@ -120,6 +159,7 @@ class PolicyEngine:
                 matched_rules=["cost-limit"],
             )
             await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+            record_policy_denial(service=_SERVICE, tool_name=tool_name)
             return decision
 
         if tool.policy.requires_approval:
@@ -161,6 +201,7 @@ class PolicyEngine:
                     "approval.requested",
                     decision.reason_code,
                 )
+                record_approval_request(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             if match in {"run_mismatch", "agent_mismatch"}:
@@ -171,6 +212,7 @@ class PolicyEngine:
                     matched_rules=["approval-run-match"],
                 )
                 await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+                record_policy_denial(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             if match == "arguments_mismatch":
@@ -180,6 +222,7 @@ class PolicyEngine:
                     matched_rules=["approval-arguments-match"],
                 )
                 await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+                record_policy_denial(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             if match == "expired":
@@ -189,6 +232,7 @@ class PolicyEngine:
                     matched_rules=["approval-not-expired"],
                 )
                 await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+                record_policy_denial(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             if match == "consumed":
@@ -198,6 +242,7 @@ class PolicyEngine:
                     matched_rules=["approval-not-consumed"],
                 )
                 await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+                record_policy_denial(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             if match == "rejected":
@@ -207,6 +252,7 @@ class PolicyEngine:
                     matched_rules=["approval-not-rejected"],
                 )
                 await self._audit(context, tool_name, "policy.denied", decision.reason_code)
+                record_policy_denial(service=_SERVICE, tool_name=tool_name)
                 return decision
 
             pending = create_approval_request(
@@ -234,6 +280,7 @@ class PolicyEngine:
                 approval=pending,
             )
             await self._audit(context, tool_name, "approval.requested", decision.reason_code)
+            record_approval_request(service=_SERVICE, tool_name=tool_name)
             return decision
 
         decision = PolicyDecision(
@@ -291,6 +338,7 @@ class PolicyEngine:
         timestamp: datetime | None = None,
     ) -> None:
         now = timestamp or self._clock()
+        trace_id = context.trace_id or current_trace_id()
         event = AuditEvent(
             event_id=f"evt-{uuid.uuid4().hex[:12]}",
             run_id=context.run_id,
@@ -301,7 +349,7 @@ class PolicyEngine:
             decision=decision,
             outcome=outcome,
             timestamp=now,
-            trace_id=context.trace_id,
+            trace_id=trace_id,
             metadata=metadata or {},
         )
         await self._audit_store.append(event)

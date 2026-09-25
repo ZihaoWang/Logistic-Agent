@@ -5,11 +5,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from agent_platform.observability import configure_observability
 from apps.agent_web.api import router
 
 
 def create_app() -> FastAPI:
     """Create and configure the agent-web FastAPI application."""
+    configure_observability("agent-web")
     app = FastAPI(title="agent-web", version="0.1.0")
     app.include_router(router)
 

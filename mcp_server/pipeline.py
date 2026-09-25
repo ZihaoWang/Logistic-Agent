@@ -18,9 +18,13 @@ from agent_platform.mcp.protocol import (
 )
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
+from agent_platform.observability.metrics import record_contract_validation_failure
+from agent_platform.observability.tracing import mark_current_span_error
 from mcp_server.backend.base import BackendCallError
 from mcp_server.policy_slot import BasePolicySlot
 from mcp_server.tools.base import BaseTool
+
+_SERVICE = "mcp-gateway"
 
 
 class ToolPipeline:
@@ -71,6 +75,8 @@ class ToolPipeline:
             validated_input = tool.input_model.model_validate(raw_arguments)
         except ValidationError as exc:
             latency_ms = self._latency_ms(started)
+            record_contract_validation_failure(service=_SERVICE, error_category="validation")
+            mark_current_span_error("contract input invalid")
             return build_failed_result(
                 tool_name,
                 latency_ms,
@@ -114,6 +120,8 @@ class ToolPipeline:
             output = tool.output_model.model_validate(adapted_body)
         except ValidationError as exc:
             latency_ms = self._latency_ms(started)
+            record_contract_validation_failure(service=_SERVICE, error_category="contract")
+            mark_current_span_error("contract output invalid")
             return build_failed_result(
                 tool_name,
                 latency_ms,

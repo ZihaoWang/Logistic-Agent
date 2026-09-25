@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -19,6 +20,15 @@ from agent_platform.models.identity import (
     DelegationContext,
 )
 from agent_platform.models.run import RunState
+from agent_platform.observability.logging import bind_run, get_logger
+from agent_platform.observability.metrics import (
+    record_agent_run,
+    record_agent_run_duration,
+    record_agent_run_failed,
+    record_approval_approved,
+    record_approval_rejected,
+)
+from agent_platform.observability.tracing import current_trace_id, start_span
 from agent_platform.persistence.base import ApprovalStore, AuditStore, RunStore
 from agent_platform.runtime.adk_runtime import AdkAgentRuntime
 from agent_platform.runtime.base import AgentRequest, AgentResponse
@@ -28,6 +38,9 @@ from agent_platform.runtime.messages import (
     message_for_tool_result,
 )
 from agent_platform.runtime.tool_executor import GovernedToolExecutor
+
+_SERVICE = "agent-web"
+_log = get_logger(_SERVICE)
 
 
 class StartRunRequest(BaseModel):
@@ -83,10 +96,42 @@ class RunCoordinator:
             thread_id=body.thread_id,
             agent_id=body.agent_id,
         )
-        return await self._runtime.run(
-            AgentRequest(thread_id=body.thread_id, message=body.message),
-            context,
-        )
+        bind_run(run_id, service=_SERVICE)
+        started = time.perf_counter()
+        with start_span(
+            "agent.run",
+            service=_SERVICE,
+            attributes={
+                "run.id": run_id,
+                "thread.id": body.thread_id,
+                "agent.id": body.agent_id,
+            },
+        ):
+            trace_id = current_trace_id()
+            if trace_id is not None:
+                context = context.model_copy(update={"trace_id": trace_id})
+            _log.info("agent.run.started", run_id=run_id, agent_id=body.agent_id)
+            try:
+                response = await self._runtime.run(
+                    AgentRequest(thread_id=body.thread_id, message=body.message),
+                    context,
+                )
+            except Exception:
+                record_agent_run_failed(service=_SERVICE)
+                record_agent_run(service=_SERVICE, status="failed")
+                record_agent_run_duration(
+                    service=_SERVICE,
+                    seconds=time.perf_counter() - started,
+                )
+                raise
+            record_agent_run(service=_SERVICE, status=response.status)
+            if response.status == "failed":
+                record_agent_run_failed(service=_SERVICE)
+            record_agent_run_duration(
+                service=_SERVICE,
+                seconds=time.perf_counter() - started,
+            )
+            return response
 
     async def get_run(self, run_id: str) -> RunState | None:
         """Return persisted run state."""
@@ -124,6 +169,7 @@ class RunCoordinator:
         )
 
         if body.decision == "rejected":
+            record_approval_rejected(service=_SERVICE)
             await self._run_store.update_run(
                 run.model_copy(
                     update={
@@ -140,6 +186,8 @@ class RunCoordinator:
                 status="completed",
             )
 
+        record_approval_approved(service=_SERVICE)
+
         pending = run.pending_tool_call
         if pending is None:
             msg = f"run {run.run_id} has no pending tool call to replay"
@@ -152,6 +200,10 @@ class RunCoordinator:
             thread_id=run.thread_id,
             agent_id=approval.requested_by_agent,
         )
+        bind_run(run.run_id, service=_SERVICE)
+        trace_id = current_trace_id()
+        if trace_id is not None:
+            context = context.model_copy(update={"trace_id": trace_id})
         outcome = await self._executor.execute(tool_name, arguments, context)
         result = outcome.result
 
@@ -172,6 +224,7 @@ class RunCoordinator:
                 status="completed",
             )
 
+        record_agent_run_failed(service=_SERVICE)
         await self._run_store.update_run(
             run.model_copy(
                 update={

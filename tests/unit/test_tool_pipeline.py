@@ -13,12 +13,14 @@ from agent_platform.mcp.protocol import (
 from agent_platform.mcp.registry import ESTIMATE_ROUTE_COST, GET_SHIPMENT
 from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
+from agent_platform.observability.setup import InMemoryTelemetry
 from contracts.routing import EstimateCostInput, EstimateCostOutput
 from mcp_server.backend.base import BackendCallError
 from mcp_server.pipeline import ToolPipeline
 from mcp_server.policy_slot import PassthroughPolicySlot
 from mcp_server.tools.estimate_cost import EstimateCostTool
 from mcp_server.tools.get_shipment import GetShipmentTool
+from tests.helpers.observability import metric_sum
 
 
 class FakeBackend:
@@ -116,7 +118,13 @@ class DenyPolicySlot:
         _ = (tool_name, arguments, context)
 
 
-async def test_cost_contract_rejects_renamed_field_via_pipeline() -> None:
+async def test_cost_contract_rejects_renamed_field_via_pipeline(
+    session_telemetry: InMemoryTelemetry,
+) -> None:
+    before = metric_sum(
+        session_telemetry.metric_reader.get_metrics_data(),
+        "contract_validation_failures_total",
+    )
     backend = FakeBackend(
         {
             "estimate_cost": {
@@ -140,6 +148,11 @@ async def test_cost_contract_rejects_renamed_field_via_pipeline() -> None:
     assert result.status == "failed"
     assert result.error is not None
     assert result.error.code == CONTRACT_OUTPUT_INVALID
+    after = metric_sum(
+        session_telemetry.metric_reader.get_metrics_data(),
+        "contract_validation_failures_total",
+    )
+    assert after == before + 1
 
 
 async def test_pipeline_maps_backend_404() -> None:

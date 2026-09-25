@@ -4,6 +4,8 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from agent_platform.observability import configure_observability
+from apps.logistics_api.middleware import trace_requests_middleware
 from apps.logistics_api.repository import BaseRepository, InMemoryLogisticsRepository
 from apps.logistics_api.routes import router
 
@@ -17,7 +19,11 @@ def default_data_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "data"
 
 
-def create_app(repo: BaseRepository | None = None) -> FastAPI:
+def create_app(
+    repo: BaseRepository | None = None,
+    *,
+    enable_observability: bool = True,
+) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Usage:
@@ -30,8 +36,11 @@ def create_app(repo: BaseRepository | None = None) -> FastAPI:
     Returns:
         A configured FastAPI application instance.
     """
+    if enable_observability:
+        configure_observability("logistics-api")
     app = FastAPI(title="logistics-api", version="0.1.0")
     app.state.repository = repo or InMemoryLogisticsRepository.from_data_dir(default_data_dir())
+    app.middleware("http")(trace_requests_middleware)
     app.include_router(router)
     return app
 

@@ -10,6 +10,10 @@ dependencies = [
     "httpx",
     "fastmcp>=4.0.10",
     "google-adk>=2.10.0",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "structlog",
 ]
 
 [dependency-groups]
@@ -39,6 +43,10 @@ disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["google.*", "google.adk.*", "google.genai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["opentelemetry.*", "structlog.*"]
 ignore_missing_imports = true
 
 [tool.bandit]
