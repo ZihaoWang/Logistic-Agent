@@ -129,3 +129,7 @@ class MemoryAuditStore:
     async def append(self, event: AuditEvent) -> None:
         """Append one audit event."""
         self.events.append(event)
+
+    async def list_for_run(self, run_id: str) -> list[AuditEvent]:
+        """Return audit events for one run in append order."""
+        return [event for event in self.events if event.run_id == run_id]

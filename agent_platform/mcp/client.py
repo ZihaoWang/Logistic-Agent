@@ -14,6 +14,7 @@ from agent_platform.mcp.protocol import (
     build_failed_result,
 )
 from agent_platform.mcp.registry import TOOL_REGISTRY, parse_tool_result_data
+from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
 
 
@@ -39,12 +40,19 @@ class McpClient:
             tools = await self._client.list_tools()
         return sorted(tool.name for tool in tools)
 
-    async def call(self, name: str, arguments: dict[str, Any]) -> ToolResult[Any]:
+    async def call(
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        *,
+        context: ExecutionContext | None = None,
+    ) -> ToolResult[Any]:
         """Call one MCP tool and return a validated ToolResult envelope.
 
         Parameters:
             name: MCP tool name.
             arguments: Raw tool arguments.
+            context: Optional execution context sent as call metadata.
 
         Returns:
             ToolResult envelope for success or failure.
@@ -61,9 +69,13 @@ class McpClient:
                 ),
             )
 
+        meta: dict[str, Any] | None = None
+        if context is not None:
+            meta = {"execution_context": context.model_dump(mode="json")}
+
         try:
             async with self._client:
-                raw_result = await self._client.call_tool(name, arguments)
+                raw_result = await self._client.call_tool(name, arguments, meta=meta)
         except TimeoutError:
             return build_failed_result(
                 name,

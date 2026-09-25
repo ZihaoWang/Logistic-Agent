@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shipment Recovery Agent</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    textarea, select, button { font: inherit; }
+    textarea { width: 100%; min-height: 80px; }
+    .panel { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-top: 1rem; }
+    .messages { white-space: pre-wrap; background: #f7f7f7; padding: 1rem; border-radius: 8px; }
+    .muted { color: #666; font-size: 0.9rem; }
+    .approval { background: #fff8e6; border: 1px solid #f0c040; padding: 1rem; border-radius: 8px; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Shipment Recovery Agent</h1>
+  <p class="muted">Demo UI for read tasks and approval-gated reroutes.</p>
+
+  <label for="agent">Agent</label>
+  <select id="agent">
+    <option value="shipment-recovery-agent">shipment-recovery-agent</option>
+    <option value="investigation-agent">investigation-agent</option>
+  </select>
+
+  <div class="panel">
+    <label for="message">Message</label>
+    <textarea id="message" placeholder="Where is ABC123?"></textarea>
+    <p><button id="send">Send</button></p>
+  </div>
+
+  <div class="panel">
+    <h2>Assistant</h2>
+    <div id="assistant" class="messages">No response yet.</div>
+    <p class="muted">Run: <span id="run-id">-</span> | Status: <span id="run-status">-</span></p>
+  </div>
+
+  <div id="approval-card" class="panel approval" hidden>
+    <h2>Approval required</h2>
+    <p id="approval-summary"></p>
+    <button id="approve">Approve</button>
+    <button id="reject">Reject</button>
+  </div>
+
+  <div class="panel">
+    <h2>Tool activity</h2>
+    <ul id="events"></ul>
+  </div>
+
+  <script>
+    let currentRunId = null;
+    let pendingApprovalId = null;
+
+    async function refreshEvents(runId) {
+      const res = await fetch(`/v1/runs/${runId}/events`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const list = document.getElementById('events');
+      list.innerHTML = '';
+      for (const event of data.events) {
+        const item = document.createElement('li');
+        item.textContent = `${event.timestamp} ${event.event_type} ${event.tool_name || ''} ${event.decision || ''}`;
+        list.appendChild(item);
+      }
+    }
+
+    function showApproval(pending) {
+      const card = document.getElementById('approval-card');
+      if (!pending) {
+        card.hidden = true;
+        pendingApprovalId = null;
+        return;
+      }
+      pendingApprovalId = pending.approval_id;
+      document.getElementById('approval-summary').textContent = pending.summary;
+      card.hidden = false;
+    }
+
+    async function sendMessage() {
+      const message = document.getElementById('message').value.trim();
+      const agent_id = document.getElementById('agent').value;
+      if (!message) return;
+
+      const res = await fetch('/v1/agent/runs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ thread_id: 'thread-demo', message, agent_id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('assistant').textContent = data.detail || 'Request failed';
+        return;
+      }
+
+      currentRunId = data.run_id;
+      document.getElementById('assistant').textContent = data.message;
+      document.getElementById('run-id').textContent = data.run_id;
+      document.getElementById('run-status').textContent = data.status;
+      showApproval(data.pending_approval);
+      await refreshEvents(data.run_id);
+    }
+
+    async function decide(decision) {
+      if (!pendingApprovalId) return;
+      const res = await fetch(`/v1/approvals/${pendingApprovalId}/decision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, decided_by: 'user-123' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        document.getElementById('assistant').textContent = data.detail || 'Decision failed';
+        return;
+      }
+      document.getElementById('assistant').textContent = data.message;
+      document.getElementById('run-status').textContent = data.status;
+      showApproval(null);
+      if (currentRunId) await refreshEvents(currentRunId);
+    }
+
+    document.getElementById('send').addEventListener('click', sendMessage);
+    document.getElementById('approve').addEventListener('click', () => decide('approved'));
+    document.getElementById('reject').addEventListener('click', () => decide('rejected'));
+  </script>
+</body>
+</html>

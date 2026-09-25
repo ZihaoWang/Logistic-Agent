@@ -132,3 +132,8 @@ class InMemoryLogisticsRepository:
         """Persist a reroute result and its idempotency fingerprint."""
         self._idempotency_actions[key] = result
         self._idempotency_fingerprints[key] = fingerprint
+
+    @property
+    def applied_reroute_count(self) -> int:
+        """Return the number of reroute actions stored in idempotency state."""
+        return len(self._idempotency_actions)

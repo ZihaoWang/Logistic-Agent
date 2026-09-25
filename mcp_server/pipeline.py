@@ -179,6 +179,18 @@ class ToolPipeline:
                     details={"status_code": exc.status_code},
                 ),
             )
+        if exc.status_code == 429:
+            return build_failed_result(
+                tool_name,
+                latency_ms,
+                build_error(
+                    BACKEND_UNAVAILABLE,
+                    "transport",
+                    "backend rate limit exceeded",
+                    retryable=True,
+                    details={"status_code": exc.status_code},
+                ),
+            )
         if exc.status_code == 0 or exc.status_code >= 500:
             return build_failed_result(
                 tool_name,

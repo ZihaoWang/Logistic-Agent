@@ -1,7 +1,7 @@
 """Run state and usage counter models."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -110,4 +110,18 @@ class RunState(BaseModel):
         default=None,
         max_length=64,
         description="Optional. Last platform error code.",
+    )
+    model_name: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Optional. Model used for this run.",
+    )
+    last_message: str | None = Field(
+        default=None,
+        max_length=4096,
+        description="Optional. Last user message for this run.",
+    )
+    pending_tool_call: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional. Tool name and arguments awaiting approval replay.",
     )

@@ -55,3 +55,6 @@ class AuditStore(Protocol):
 
     async def append(self, event: AuditEvent) -> None:
         """Append one audit event."""
+
+    async def list_for_run(self, run_id: str) -> list[AuditEvent]:
+        """Return audit events for one run in append order."""
