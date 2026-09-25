@@ -1,0 +1,65 @@
+[
+  {
+    "shipment_id": "ABC123",
+    "route_id": "R-102",
+    "via_ports": ["DEHAM"],
+    "eta": "2026-09-28T08:00:00Z",
+    "additional_cost_eur": 1450.0,
+    "confidence": 0.86,
+    "capacity_available": true
+  },
+  {
+    "shipment_id": "ABC123",
+    "route_id": "R-205",
+    "via_ports": ["BEANR"],
+    "eta": "2026-09-28T06:00:00Z",
+    "additional_cost_eur": 2600.0,
+    "confidence": 0.80,
+    "capacity_available": true
+  },
+  {
+    "shipment_id": "ABC123",
+    "route_id": "R-310",
+    "via_ports": ["DEHAM"],
+    "eta": "2026-09-27T22:00:00Z",
+    "additional_cost_eur": 800.0,
+    "confidence": 0.64,
+    "capacity_available": false
+  },
+  {
+    "shipment_id": "ABC123",
+    "route_id": "R-118",
+    "via_ports": ["DEBRV"],
+    "eta": "2026-09-29T18:00:00Z",
+    "additional_cost_eur": 1100.0,
+    "confidence": 0.77,
+    "capacity_available": true
+  },
+  {
+    "shipment_id": "GHI789",
+    "route_id": "R-401",
+    "via_ports": ["BEANR"],
+    "eta": "2026-09-28T12:00:00Z",
+    "additional_cost_eur": 1800.0,
+    "confidence": 0.72,
+    "capacity_available": true
+  },
+  {
+    "shipment_id": "GHI789",
+    "route_id": "R-402",
+    "via_ports": ["DEHAM"],
+    "eta": "2026-09-28T10:00:00Z",
+    "additional_cost_eur": 1600.0,
+    "confidence": 0.81,
+    "capacity_available": true
+  },
+  {
+    "shipment_id": "DEF456",
+    "route_id": "R-501",
+    "via_ports": ["DEHAM"],
+    "eta": "2026-09-29T06:00:00Z",
+    "additional_cost_eur": 400.0,
+    "confidence": 0.90,
+    "capacity_available": true
+  }
+]

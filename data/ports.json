@@ -1,0 +1,44 @@
+[
+  {
+    "port_code": "NLRTM",
+    "congestion_level": "high",
+    "delay_hours": 18.0,
+    "disruption_reason": "Berth congestion at Rotterdam",
+    "updated_at": "2026-09-25T08:00:00Z"
+  },
+  {
+    "port_code": "CNSHA",
+    "congestion_level": "low",
+    "delay_hours": 2.0,
+    "disruption_reason": null,
+    "updated_at": "2026-09-25T08:00:00Z"
+  },
+  {
+    "port_code": "DKCPH",
+    "congestion_level": "medium",
+    "delay_hours": 6.0,
+    "disruption_reason": null,
+    "updated_at": "2026-09-25T08:00:00Z"
+  },
+  {
+    "port_code": "DEHAM",
+    "congestion_level": "low",
+    "delay_hours": 3.0,
+    "disruption_reason": null,
+    "updated_at": "2026-09-25T08:00:00Z"
+  },
+  {
+    "port_code": "BEANR",
+    "congestion_level": "critical",
+    "delay_hours": 36.0,
+    "disruption_reason": "Labor action at Antwerp",
+    "updated_at": "2026-09-25T08:00:00Z"
+  },
+  {
+    "port_code": "DEBRV",
+    "congestion_level": "medium",
+    "delay_hours": 8.0,
+    "disruption_reason": null,
+    "updated_at": "2026-09-25T08:00:00Z"
+  }
+]

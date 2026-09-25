@@ -1,0 +1,46 @@
+[
+  {
+    "shipment_id": "ABC123",
+    "origin": "CNSHA",
+    "destination": "DKCPH",
+    "current_port": "NLRTM",
+    "status": "delayed",
+    "planned_eta": "2026-09-27T10:00:00Z",
+    "current_eta": "2026-09-28T14:00:00Z",
+    "cargo_type": "general",
+    "priority": "high"
+  },
+  {
+    "shipment_id": "DEF456",
+    "origin": "CNSHA",
+    "destination": "DEHAM",
+    "current_port": "CNSHA",
+    "status": "on_time",
+    "planned_eta": "2026-09-29T08:00:00Z",
+    "current_eta": "2026-09-29T08:00:00Z",
+    "cargo_type": "general",
+    "priority": "standard"
+  },
+  {
+    "shipment_id": "GHI789",
+    "origin": "CNSHA",
+    "destination": "DKCPH",
+    "current_port": "NLRTM",
+    "status": "held",
+    "planned_eta": "2026-09-27T12:00:00Z",
+    "current_eta": "2026-09-29T06:00:00Z",
+    "cargo_type": "temperature_controlled",
+    "priority": "critical"
+  },
+  {
+    "shipment_id": "MNO345",
+    "origin": "NLRTM",
+    "destination": "DKCPH",
+    "current_port": null,
+    "status": "delivered",
+    "planned_eta": "2026-09-20T16:00:00Z",
+    "current_eta": "2026-09-20T16:00:00Z",
+    "cargo_type": "general",
+    "priority": "standard"
+  }
+]
