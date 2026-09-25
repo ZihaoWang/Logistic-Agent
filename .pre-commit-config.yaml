@@ -16,6 +16,7 @@ repos:
           - fastapi
           - uvicorn
           - httpx
+          - fastmcp>=4.0.10
           - pytest
           - pytest-asyncio
         pass_filenames: false

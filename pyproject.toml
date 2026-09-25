@@ -8,6 +8,7 @@ dependencies = [
     "pydantic",
     "pydantic-settings",
     "httpx",
+    "fastmcp>=4.0.10",
 ]
 
 [dependency-groups]
