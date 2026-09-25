@@ -1,0 +1,45 @@
+[project]
+name = "agent-platform-reference"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "pydantic-settings",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ruff==0.6.9",
+    "mypy==1.11.2",
+    "bandit==1.7.9",
+    "pre-commit",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_untyped_defs = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "evals/datasets"]
+skips = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
