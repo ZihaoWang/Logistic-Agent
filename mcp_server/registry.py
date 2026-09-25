@@ -1,13 +1,27 @@
 """Runtime wiring for MCP tools and the execution pipeline."""
 
+from collections.abc import Callable
+from datetime import datetime
+
 import httpx
 
 from agent_platform.mcp.registry import (
     get_policy,
 )
+from agent_platform.persistence.memory import (
+    MemoryApprovalStore,
+    MemoryAuditStore,
+    MemoryRunStore,
+)
+from agent_platform.policy.engine import PolicyEngine
+from agent_platform.policy.settings import PolicySettings
 from mcp_server.backend.http import HttpLogisticsClient
 from mcp_server.pipeline import ToolPipeline
-from mcp_server.policy_slot import BasePolicySlot, PassthroughPolicySlot
+from mcp_server.policy_slot import (
+    BasePolicySlot,
+    EnforcingPolicySlot,
+    PassthroughPolicySlot,
+)
 from mcp_server.tools import (
     CheckPolicyTool,
     EstimateCostTool,
@@ -37,6 +51,51 @@ def build_tools(backend: HttpLogisticsClient) -> dict[str, BaseTool]:
         RequestRerouteTool(backend),
     ]
     return {tool.name: tool for tool in tool_instances}
+
+
+def build_governed_pipeline(
+    backend: HttpLogisticsClient,
+    *,
+    run_store: MemoryRunStore | None = None,
+    approval_store: MemoryApprovalStore | None = None,
+    audit_store: MemoryAuditStore | None = None,
+    settings: PolicySettings | None = None,
+    clock: Callable[[], datetime] | None = None,
+) -> tuple[ToolPipeline, PolicyEngine, MemoryRunStore, MemoryApprovalStore, MemoryAuditStore]:
+    """Create a pipeline with EnforcingPolicySlot and in-memory stores.
+
+    Parameters:
+        backend: HTTP client for logistics-api.
+        run_store: Optional run store override for tests.
+        approval_store: Optional approval store override for tests.
+        audit_store: Optional audit store override for tests.
+        settings: Optional policy settings override for tests.
+
+    Returns:
+        Tuple of pipeline, policy engine, and the wired stores.
+    """
+    resolved_run_store = run_store or MemoryRunStore()
+    resolved_approval_store = approval_store or MemoryApprovalStore()
+    resolved_audit_store = audit_store or MemoryAuditStore()
+    engine = PolicyEngine(
+        run_store=resolved_run_store,
+        approval_store=resolved_approval_store,
+        audit_store=resolved_audit_store,
+        settings=settings or PolicySettings(),
+        clock=clock,
+    )
+    policy_slot = EnforcingPolicySlot(engine)
+    pipeline = ToolPipeline(
+        tools=build_tools(backend),
+        policy_slot=policy_slot,
+    )
+    return (
+        pipeline,
+        engine,
+        resolved_run_store,
+        resolved_approval_store,
+        resolved_audit_store,
+    )
 
 
 def build_pipeline(

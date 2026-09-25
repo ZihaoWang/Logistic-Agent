@@ -11,6 +11,7 @@ from agent_platform.mcp.protocol import (
     build_metadata,
 )
 from agent_platform.mcp.registry import ESTIMATE_ROUTE_COST, GET_SHIPMENT
+from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
 from contracts.routing import EstimateCostInput, EstimateCostOutput
 from mcp_server.backend.base import BackendCallError
@@ -91,8 +92,13 @@ class FakeBackend:
 class DenyPolicySlot:
     """Policy slot that always denies before backend calls."""
 
-    async def check(self, tool_name: str, arguments: BaseModel) -> ToolResult[Any] | None:
-        _ = arguments
+    async def check(
+        self,
+        tool_name: str,
+        arguments: BaseModel,
+        context: ExecutionContext | None = None,
+    ) -> ToolResult[Any] | None:
+        _ = (arguments, context)
         return ToolResult[Any](
             status="denied",
             data=None,
@@ -100,6 +106,14 @@ class DenyPolicySlot:
             approval=None,
             metadata=build_metadata(tool_name, 0),
         )
+
+    async def record_success(
+        self,
+        tool_name: str,
+        arguments: BaseModel,
+        context: ExecutionContext | None = None,
+    ) -> None:
+        _ = (tool_name, arguments, context)
 
 
 async def test_cost_contract_rejects_renamed_field_via_pipeline() -> None:

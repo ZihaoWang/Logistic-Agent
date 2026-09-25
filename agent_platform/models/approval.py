@@ -82,3 +82,57 @@ class ApprovalRequest(BaseModel):
         ...,
         description="Required. Current approval status.",
     )
+    decided_at: datetime | None = Field(
+        default=None,
+        description="Optional. Timestamp when a human decided.",
+    )
+    decided_by: str | None = Field(
+        default=None,
+        max_length=64,
+        description="Optional. Actor who approved or rejected.",
+    )
+    consumed_at: datetime | None = Field(
+        default=None,
+        description="Optional. Timestamp when the approval was consumed.",
+    )
+
+
+class ApprovalDecision(BaseModel):
+    """Human decision on a pending approval request.
+
+    Usage:
+        Passed to ApprovalStore.decide to transition approval status.
+
+    Fields:
+        approval_id: Required approval identifier being decided.
+        decision: Required approved or rejected outcome.
+        decided_by: Required actor who made the decision.
+        decided_at: Required decision timestamp in UTC.
+        comment: Optional reviewer comment.
+    """
+
+    approval_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Required. Approval identifier being decided.",
+    )
+    decision: Literal["approved", "rejected"] = Field(
+        ...,
+        description="Required. Approved or rejected outcome.",
+    )
+    decided_by: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Required. Actor who made the decision.",
+    )
+    decided_at: datetime = Field(
+        ...,
+        description="Required. Decision timestamp in UTC.",
+    )
+    comment: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Optional. Reviewer comment.",
+    )

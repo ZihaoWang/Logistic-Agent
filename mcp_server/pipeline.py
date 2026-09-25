@@ -16,6 +16,7 @@ from agent_platform.mcp.protocol import (
     build_failed_result,
     build_success_result,
 )
+from agent_platform.models.execution import ExecutionContext
 from agent_platform.models.tools import ToolResult
 from mcp_server.backend.base import BackendCallError
 from mcp_server.policy_slot import BasePolicySlot
@@ -35,12 +36,18 @@ class ToolPipeline:
         self._tools = tools
         self._policy_slot = policy_slot
 
-    async def run(self, tool_name: str, raw_arguments: dict[str, Any]) -> ToolResult[Any]:
+    async def run(
+        self,
+        tool_name: str,
+        raw_arguments: dict[str, Any],
+        context: ExecutionContext | None = None,
+    ) -> ToolResult[Any]:
         """Execute one tool call through the gateway pipeline.
 
         Parameters:
             tool_name: Registered MCP tool name.
             raw_arguments: Raw argument dict from the MCP protocol edge.
+            context: Optional execution context for governed policy checks.
 
         Returns:
             ToolResult envelope for success or failure.
@@ -76,7 +83,11 @@ class ToolPipeline:
                 ),
             )
 
-        policy_result = await self._policy_slot.check(tool_name, validated_input)
+        policy_result = await self._policy_slot.check(
+            tool_name,
+            validated_input,
+            context,
+        )
         if policy_result is not None:
             latency_ms = self._latency_ms(started)
             return self._with_latency(policy_result, tool_name, latency_ms)
@@ -114,6 +125,8 @@ class ToolPipeline:
                     details={"error_count": len(exc.errors())},
                 ),
             )
+
+        await self._policy_slot.record_success(tool_name, validated_input, context)
 
         latency_ms = self._latency_ms(started)
         return build_success_result(tool_name, latency_ms, output)

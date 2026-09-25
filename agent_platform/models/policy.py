@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 ToolRisk = Literal["low", "medium", "high"]
+PolicyDecisionKind = Literal["allow", "deny", "require_approval"]
 
 
 class RetryPolicy(BaseModel):
@@ -110,3 +111,53 @@ class ToolPolicy(BaseModel):
         default_factory=RetryPolicy,
         description="Optional. Retry policy; defaults to RetryPolicy().",
     )
+
+
+class PolicyDecision(BaseModel):
+    """Result of a policy engine evaluation for one tool call.
+
+    Usage:
+        Returned by PolicyEngine.evaluate_tool_call before backend execution.
+
+    Fields:
+        decision: Required allow, deny, or require_approval outcome.
+        reason_code: Required stable machine-readable reason code.
+        message: Required short human-readable explanation.
+        matched_rules: Optional rule names that matched; defaults to empty list.
+        missing_scopes: Optional scopes the caller lacks; defaults to empty list.
+        approval: Optional pending approval when decision is require_approval.
+    """
+
+    decision: PolicyDecisionKind = Field(
+        ...,
+        description="Required. Allow, deny, or require_approval outcome.",
+    )
+    reason_code: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Required. Stable machine-readable reason code.",
+    )
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Required. Short human-readable explanation.",
+    )
+    matched_rules: list[str] = Field(
+        default_factory=list,
+        description="Optional. Rule names that matched; defaults to empty list.",
+    )
+    missing_scopes: list[str] = Field(
+        default_factory=list,
+        description="Optional. Scopes the caller lacks; defaults to empty list.",
+    )
+    approval: "ApprovalRequest | None" = Field(
+        default=None,
+        description="Optional. Pending approval when decision is require_approval.",
+    )
+
+
+from agent_platform.models.approval import ApprovalRequest  # noqa: E402
+
+PolicyDecision.model_rebuild()
