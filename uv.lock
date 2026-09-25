@@ -21,6 +21,7 @@ dependencies = [
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "structlog" },
     { name = "uvicorn" },
 ]
@@ -46,6 +47,7 @@ requires-dist = [
     { name = "opentelemetry-sdk" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "pyyaml" },
     { name = "structlog" },
     { name = "uvicorn" },
 ]

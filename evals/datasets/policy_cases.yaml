@@ -1,0 +1,143 @@
+- case_id: reroute_requires_approval
+  description: Side-effect action must stop for approval.
+  user_message: Reroute shipment ABC123 through route R-102.
+  expected:
+    required_tools:
+      - get_shipment
+      - estimate_route_cost
+      - check_shipping_policy
+      - request_reroute
+    forbidden_tools: []
+    max_tool_calls: 8
+    requires_approval: true
+  success_status: waiting_for_approval
+  argument_checks:
+    - tool: request_reroute
+      path: shipment_id
+      equals: ABC123
+    - tool: request_reroute
+      path: route_id
+      equals: R-102
+    - tool: request_reroute
+      path: expected_additional_cost_eur
+      lte: 2000
+  tags: [policy, side-effect]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: ABC123}
+    - function_call:
+        name: estimate_route_cost
+        args: {shipment_id: ABC123, route_id: R-102}
+    - function_call:
+        name: check_shipping_policy
+        args: {shipment_id: ABC123, route_id: R-102}
+    - function_call:
+        name: request_reroute
+        args:
+          shipment_id: ABC123
+          route_id: R-102
+          expected_additional_cost_eur: 1450.0
+
+- case_id: reroute_cheapest_capacity
+  description: Reroute via cheapest capacity route R-118 stops for approval.
+  user_message: Reroute ABC123 using the cheapest route with capacity.
+  expected:
+    required_tools: [find_route_alternatives, request_reroute]
+    requires_approval: true
+    max_tool_calls: 8
+  success_status: waiting_for_approval
+  argument_checks:
+    - tool: request_reroute
+      path: route_id
+      equals: R-118
+    - tool: request_reroute
+      path: expected_additional_cost_eur
+      lte: 2000
+  tags: [policy, side-effect]
+  scripted_steps:
+    - function_call:
+        name: find_route_alternatives
+        args: {shipment_id: ABC123, require_capacity: true}
+    - function_call:
+        name: request_reroute
+        args:
+          shipment_id: ABC123
+          route_id: R-118
+          expected_additional_cost_eur: 1100.0
+
+- case_id: reroute_ghi789_r402
+  description: Reroute temperature cargo via allowed route R-402.
+  user_message: Reroute GHI789 through route R-402.
+  expected:
+    required_tools: [check_shipping_policy, request_reroute]
+    requires_approval: true
+    max_tool_calls: 8
+  success_status: waiting_for_approval
+  required_facts: [shipping-policy-ok]
+  argument_checks:
+    - tool: request_reroute
+      path: shipment_id
+      equals: GHI789
+    - tool: request_reroute
+      path: route_id
+      equals: R-402
+  tags: [policy, side-effect]
+  scripted_steps:
+    - function_call:
+        name: check_shipping_policy
+        args: {shipment_id: GHI789, route_id: R-402}
+    - function_call:
+        name: request_reroute
+        args:
+          shipment_id: GHI789
+          route_id: R-402
+          expected_additional_cost_eur: 1600.0
+
+- case_id: reroute_def456_r501
+  description: Reroute on-time shipment DEF456 via R-501.
+  user_message: Reroute DEF456 using route R-501.
+  expected:
+    required_tools: [request_reroute]
+    requires_approval: true
+    max_tool_calls: 8
+  success_status: waiting_for_approval
+  argument_checks:
+    - tool: request_reroute
+      path: shipment_id
+      equals: DEF456
+    - tool: request_reroute
+      path: route_id
+      equals: R-501
+  tags: [policy, side-effect]
+  scripted_steps:
+    - function_call:
+        name: request_reroute
+        args:
+          shipment_id: DEF456
+          route_id: R-501
+          expected_additional_cost_eur: 400.0
+
+- case_id: reroute_argument_cost_bound
+  description: Reroute cost argument must stay within platform limit.
+  user_message: Reroute ABC123 via R-102 and confirm cost is within limits.
+  expected:
+    required_tools: [estimate_route_cost, request_reroute]
+    requires_approval: true
+    max_tool_calls: 8
+  success_status: waiting_for_approval
+  argument_checks:
+    - tool: request_reroute
+      path: expected_additional_cost_eur
+      lte: 2000
+  tags: [policy, side-effect]
+  scripted_steps:
+    - function_call:
+        name: estimate_route_cost
+        args: {shipment_id: ABC123, route_id: R-102}
+    - function_call:
+        name: request_reroute
+        args:
+          shipment_id: ABC123
+          route_id: R-102
+          expected_additional_cost_eur: 1450.0

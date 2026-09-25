@@ -1,0 +1,45 @@
+- case_id: unknown_shipment_then_stop
+  description: Unknown shipment lookup fails gracefully without writes.
+  user_message: Where is shipment NOPE999?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  success_status: failed
+  tags: [recovery]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: NOPE999}
+    - text: Shipment NOPE999 was not found.
+
+- case_id: unknown_port_still_answers_shipment
+  description: Unknown port does not block shipment facts.
+  user_message: Where is ABC123 and what is port ZZZZZ status?
+  expected:
+    required_tools: [get_shipment, get_port_status]
+    forbidden_tools: [request_reroute]
+  required_facts: [delayed, NLRTM]
+  success_status: failed
+  tags: [recovery]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: ABC123}
+    - function_call:
+        name: get_port_status
+        args: {port_code: ZZZZZ}
+    - text: ABC123 is delayed at NLRTM; port ZZZZZ is unknown.
+
+- case_id: missing_route_no_write
+  description: Missing route estimate must not trigger reroute.
+  user_message: Estimate cost for ABC123 via route R-404.
+  expected:
+    required_tools: [estimate_route_cost]
+    forbidden_tools: [request_reroute]
+  success_status: failed
+  tags: [recovery]
+  scripted_steps:
+    - function_call:
+        name: estimate_route_cost
+        args: {shipment_id: ABC123, route_id: R-404}
+    - text: Route R-404 not found; no reroute attempted.

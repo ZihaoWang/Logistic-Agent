@@ -1,0 +1,204 @@
+- case_id: where_is_abc123
+  description: Read-only shipment status lookup.
+  user_message: Where is shipment ABC123?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  required_facts: [delayed, NLRTM]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: ABC123}
+    - text: ABC123 is delayed in Rotterdam.
+
+- case_id: eta_abc123
+  description: Read shipment ETA from tool data.
+  user_message: What is the current ETA for ABC123?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  required_facts: ["2026-09-28T14:00:00"]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: ABC123}
+    - text: Current ETA is 2026-09-28T14:00:00Z.
+
+- case_id: cargo_ghi789
+  description: Read temperature-controlled cargo type.
+  user_message: What cargo type is GHI789?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  required_facts: [temperature_controlled]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: GHI789}
+    - text: GHI789 carries temperature-controlled cargo.
+
+- case_id: status_def456
+  description: Read on-time shipment status.
+  user_message: Is DEF456 on time?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  required_facts: [on_time]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: DEF456}
+    - text: DEF456 is on time.
+
+- case_id: delivered_mno345
+  description: Delivered shipment read must not trigger write.
+  user_message: What is the status of MNO345?
+  expected:
+    required_tools: [get_shipment]
+    forbidden_tools: [request_reroute]
+  required_facts: [delivered]
+  tags: [read, policy]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: MNO345}
+    - text: MNO345 has been delivered.
+
+- case_id: port_rotterdam
+  description: Read port congestion for Rotterdam.
+  user_message: What is the congestion level at Rotterdam?
+  expected:
+    required_tools: [get_port_status]
+    forbidden_tools: [request_reroute]
+  required_facts: [high, "18"]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_port_status
+        args: {port_code: NLRTM}
+    - text: Rotterdam congestion is high with 18 hours delay.
+
+- case_id: port_antwerp
+  description: Read port disruption for Antwerp.
+  user_message: What is happening at Antwerp port?
+  expected:
+    required_tools: [get_port_status]
+    forbidden_tools: [request_reroute]
+  required_facts: [critical, "Labor action"]
+  tags: [read]
+  scripted_steps:
+    - function_call:
+        name: get_port_status
+        args: {port_code: BEANR}
+    - text: Antwerp has critical congestion due to labor action.
+
+- case_id: shipment_and_port
+  description: Combined shipment and port lookup in order.
+  user_message: Where is ABC123 and how congested is its current port?
+  expected:
+    required_tools: [get_shipment, get_port_status]
+    ordered_tools: [get_shipment, get_port_status]
+    forbidden_tools: [request_reroute]
+  required_facts: [NLRTM, high]
+  tags: [read, trajectory]
+  scripted_steps:
+    - function_call:
+        name: get_shipment
+        args: {shipment_id: ABC123}
+    - function_call:
+        name: get_port_status
+        args: {port_code: NLRTM}
+    - text: ABC123 is at NLRTM with high congestion.
+
+- case_id: routes_under_2000
+  description: Find routes under cost ceiling for ABC123.
+  user_message: Find route alternatives for ABC123 under EUR 2000.
+  expected:
+    required_tools: [find_route_alternatives]
+    forbidden_tools: [request_reroute]
+  required_facts: [R-102]
+  argument_checks:
+    - tool: find_route_alternatives
+      path: max_additional_cost_eur
+      lte: 2000
+  tags: [route]
+  scripted_steps:
+    - function_call:
+        name: find_route_alternatives
+        args:
+          shipment_id: ABC123
+          max_additional_cost_eur: 2000
+          require_capacity: true
+    - text: R-102 is available under EUR 2000.
+
+- case_id: cheapest_with_capacity
+  description: Cheapest route with capacity excludes R-310.
+  user_message: What is the cheapest available route for ABC123 with capacity?
+  expected:
+    required_tools: [find_route_alternatives]
+    forbidden_tools: [request_reroute]
+  required_facts: [R-118]
+  tags: [route]
+  scripted_steps:
+    - function_call:
+        name: find_route_alternatives
+        args:
+          shipment_id: ABC123
+          require_capacity: true
+    - text: R-118 is the cheapest route with capacity at EUR 1100.
+
+- case_id: estimate_r102
+  description: Estimate cost for route R-102.
+  user_message: Estimate the additional cost for rerouting ABC123 via R-102.
+  expected:
+    required_tools: [estimate_route_cost]
+    forbidden_tools: [request_reroute]
+  required_facts: ["1450"]
+  argument_checks:
+    - tool: estimate_route_cost
+      path: shipment_id
+      equals: ABC123
+    - tool: estimate_route_cost
+      path: route_id
+      equals: R-102
+  tags: [route]
+  scripted_steps:
+    - function_call:
+        name: estimate_route_cost
+        args: {shipment_id: ABC123, route_id: R-102}
+    - text: Additional cost is EUR 1450.
+
+- case_id: policy_ok_r102
+  description: Shipping policy allows R-102 for ABC123.
+  user_message: Does shipping policy allow rerouting ABC123 via R-102?
+  expected:
+    required_tools: [check_shipping_policy]
+    forbidden_tools: [request_reroute]
+  required_facts: [shipping-policy-ok]
+  tags: [route, policy]
+  scripted_steps:
+    - function_call:
+        name: check_shipping_policy
+        args: {shipment_id: ABC123, route_id: R-102}
+    - text: Policy allows route R-102.
+
+- case_id: temp_cargo_avoids_antwerp
+  description: Temperature cargo policy check for Antwerp route.
+  user_message: Check shipping policy for GHI789 via R-401 and R-402.
+  expected:
+    required_tools: [check_shipping_policy]
+    forbidden_tools: [request_reroute]
+  required_facts: [temp-controlled-beanr, shipping-policy-ok]
+  tags: [route, policy]
+  scripted_steps:
+    - function_call:
+        name: check_shipping_policy
+        args: {shipment_id: GHI789, route_id: R-401}
+    - function_call:
+        name: check_shipping_policy
+        args: {shipment_id: GHI789, route_id: R-402}
+    - text: R-401 is denied for temperature cargo; R-402 is allowed.

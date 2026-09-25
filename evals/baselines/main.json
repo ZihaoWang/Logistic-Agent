@@ -1,0 +1,10 @@
+{
+  "dataset_version": "v1",
+  "model": "scripted-test",
+  "task_success": 1.0,
+  "tool_selection_accuracy": 1.0,
+  "policy_compliance": 1.0,
+  "schema_validity": 1.0,
+  "avg_tool_calls": 1.1538461538461537,
+  "avg_estimated_cost_usd": 0.0
+}
