@@ -12,10 +12,10 @@ The focus is not chatbot UX. It is the engineering around production agents:
 - retries, timeouts, budgets, and idempotency
 - structured audit events
 - OpenTelemetry tracing and metrics
-- deterministic agent evaluation and regression gates
+- offline agent evaluation and regression gates
 - multiple agent identities sharing the same governance layer
 
-> **Status:** Local runtime, governance, observability, and deterministic evaluation are implemented and tested.
+> **Status:** Local runtime, governance, observability, and offline evaluation are implemented and tested.
 > GCP deployment and GitHub CI/CD are in progress.
 
 ## Architecture
@@ -48,7 +48,7 @@ The agent never accesses logistics data directly. All domain operations go throu
 
 | Area | Implementation |
 |---|---|
-| Logistics backend | Deterministic FastAPI service with synthetic shipment, port, and route data |
+| Logistics backend | offline FastAPI service with synthetic shipment, port, and route data |
 | MCP | Six typed tools with Pydantic input/output contracts |
 | Governance | Identity, scopes, policy checks, tool-call budgets, and approval gates |
 | Side effects | Idempotent rerouting protected by argument-bound human approval |
@@ -56,7 +56,7 @@ The agent never accesses logistics data directly. All domain operations go throu
 | Multi-agent | Main agent + read-only investigation agent sharing the same governance layer |
 | Reliability | Retry, timeout, quota, and budget enforcement |
 | Observability | Structured logs, OpenTelemetry traces, metrics, audit events, run/trace correlation |
-| Evaluation | Deterministic scripted agent evaluation with regression baselines |
+| Evaluation | offline scripted agent evaluation with regression baselines |
 | Testing | Unit, contract, policy, integration, and end-to-end tests |
 
 ## Quick Start
@@ -69,7 +69,7 @@ You need:
 - [`uv`](https://docs.astral.sh/uv/)
 - Docker and Docker Compose (only required for local observability)
 
-The deterministic test and evaluation paths do **not** require Gemini or GCP
+The offline test and evaluation paths do **not** require Gemini or GCP
 credentials.
 
 ### 1. Install
@@ -77,8 +77,8 @@ credentials.
 Clone the repository and install the development environment:
 
 ```bash
-git clone <repository-url>
-cd <repository-name>
+git clone [<repository-url>](https://github.com/ZihaoWang/Logistic-Agent)
+cd Logistic-Agent
 
 ./scripts/dev.sh install
 ```
@@ -95,7 +95,7 @@ This installs the Python dependencies and Git pre-commit hooks.
 The lint command runs Ruff, mypy, and Bandit. The test suite covers unit,
 contract, policy, integration, and end-to-end behavior.
 
-### 3. Run the deterministic agent evaluation
+### 3. Run the offline agent evaluation
 
 The evaluation suite uses a scripted model, so no API key is required.
 
@@ -103,7 +103,7 @@ Run the main shipment recovery agent:
 
 ```bash
 uv run python -m evals.runner \
-  --mode deterministic \
+  --mode offline \
   --agent shipment-recovery-agent \
   --dataset all
 ```
@@ -112,7 +112,7 @@ Run the read-only investigation agent:
 
 ```bash
 uv run python -m evals.runner \
-  --mode deterministic \
+  --mode offline \
   --agent investigation-agent \
   --dataset all
 ```
@@ -140,11 +140,11 @@ PolicyEngine
 Logistics backend
 ```
 
-Only the model is replaced by a deterministic scripted implementation.
+Only the model is replaced by a offline scripted implementation.
 
 ### 4. Run the logistics API
 
-Start the deterministic logistics backend:
+Start the offline logistics backend:
 
 ```bash
 uv run uvicorn apps.logistics_api.main:app \
@@ -210,17 +210,15 @@ Stop the observability stack with:
 
 ### Live Gemini agent
 
-The live ADK/Gemini path requires either a Gemini API key or Google Cloud
-Application Default Credentials.
+The live ADK/Gemini path requires either a Gemini API key or Google Cloud Application Default Credentials.
 
-The deterministic test and evaluation paths above are the recommended way to
-explore the repository without external credentials.
+The offline test and evaluation paths above are the recommended way to explore the repository without external credentials.
 
-## Evaluation
+## Offline evaluation
 
 The project treats agent behavior as a testable system rather than relying on exact model wording.
 
-The deterministic evaluation suite runs scripted model behavior through the real MCP, policy, approval, audit, and execution stack.
+The offline evaluation suite runs scripted model behavior through the real MCP, policy, approval, audit, and execution stack.
 
 It currently includes 26 cases evaluated across:
 
@@ -236,8 +234,10 @@ It currently includes 26 cases evaluated across:
 Run the regression suite:
 
 ```bash
-python -m evals.runner --mode deterministic
+uv run python -m evals.runner --mode deterministic
 ```
+
+> Live-model evaluation with Gemini is planned as a later validation layer.
 
 ## Governance and safety
 
