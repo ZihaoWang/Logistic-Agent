@@ -20,7 +20,6 @@ The focus is not chatbot UX. It is the engineering around production agents:
 
 ## Architecture
 
-````markdown
 ```mermaid
 flowchart LR
     User[User] --> Agent[ADK Agent]
@@ -43,7 +42,7 @@ flowchart LR
     Eval --> MCP
     Eval --> Policy
 ```
-````
+
 The agent never accesses logistics data directly. All domain operations go through typed MCP tools and the shared governance layer. Side-effect actions such as rerouting require policy authorization and human approval.
 
 ## What is implemented
