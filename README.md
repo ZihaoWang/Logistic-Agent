@@ -20,6 +20,7 @@ The focus is not chatbot UX. It is the engineering around production agents:
 
 ## Architecture
 
+````markdown
 ```mermaid
 flowchart LR
     User[User] --> Agent[ADK Agent]
@@ -42,6 +43,7 @@ flowchart LR
     Eval --> MCP
     Eval --> Policy
 ```
+````
 The agent never accesses logistics data directly. All domain operations go through typed MCP tools and the shared governance layer. Side-effect actions such as rerouting require policy authorization and human approval.
 
 ## What is implemented
@@ -61,88 +63,33 @@ The agent never accesses logistics data directly. All domain operations go throu
 
 ## Quick Start
 
-### Prerequisites
+Requires Python 3.12 and `uv`. Docker is only required for local observability.
 
-You need:
-
-- Python 3.12
-- [`uv`](https://docs.astral.sh/uv/)
-- Docker and Docker Compose (only required for local observability)
-
-The offline test and evaluation paths do **not** require Gemini or GCP
-credentials.
-
-### 1. Install
-
-Clone the repository and install the development environment:
+### Install and test
 
 ```bash
-git clone [<repository-url>](https://github.com/ZihaoWang/Logistic-Agent)
+git clone https://github.com/ZihaoWang/Logistic-Agent.git
 cd Logistic-Agent
 
 ./scripts/dev.sh install
-```
-
-This installs the Python dependencies and Git pre-commit hooks.
-
-### 2. Run static checks and tests
-
-```bash
 ./scripts/dev.sh lint
 ./scripts/dev.sh test
 ```
 
-The lint command runs Ruff, mypy, and Bandit. The test suite covers unit,
-contract, policy, integration, and end-to-end behavior.
+### Run the offline agent evaluation
 
-### 3. Run the offline agent evaluation
+No GCP credential and Gemini API key are required.
 
-The evaluation suite uses a scripted model, so no API key is required.
-
-Run the main shipment recovery agent:
+The suite runs 26 scripted cases through the real governed execution stack, covering tool use, approvals, policy violations, adversarial requests, and recovery scenarios.
 
 ```bash
 uv run python -m evals.runner \
-  --mode offline \
+  --mode deterministic \
   --agent shipment-recovery-agent \
   --dataset all
 ```
 
-Run the read-only investigation agent:
-
-```bash
-uv run python -m evals.runner \
-  --mode offline \
-  --agent investigation-agent \
-  --dataset all
-```
-
-The suite contains 26 cases covering normal tool use, route comparison,
-approval flows, policy violations, adversarial requests, and recovery cases.
-
-Unlike prompt-based tests, these evaluations assert on structured agent
-behavior including tool selection, arguments, execution trajectory, policy
-compliance, schema validity, task success, and cost.
-
-Both agents execute through the real governed runtime:
-
-```text
-Scripted model
-    ↓
-RunCoordinator
-    ↓
-GovernedToolExecutor
-    ↓
-MCP tools
-    ↓
-PolicyEngine
-    ↓
-Logistics backend
-```
-
-Only the model is replaced by a offline scripted implementation.
-
-### 4. Run the logistics API
+### Run the logistics API
 
 Start the offline logistics backend:
 
@@ -157,26 +104,8 @@ In another terminal:
 ```bash
 curl -sf http://127.0.0.1:8002/health
 
-curl -sf \
-  http://127.0.0.1:8002/v1/shipments/ABC123
+curl -sf http://127.0.0.1:8002/v1/shipments/ABC123
 ```
-
-You can also search for alternative routes:
-
-```bash
-curl -sf -X POST \
-  http://127.0.0.1:8002/v1/routes/search \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "shipment_id": "ABC123",
-    "constraints": {
-      "max_additional_cost_eur": 2000,
-      "max_delay_hours": 24
-    }
-  }'
-```
-
-All logistics data is synthetic and loaded from the repository.
 
 ### 5. Optional: local observability
 
@@ -207,12 +136,6 @@ Stop the observability stack with:
 ```bash
 ./scripts/dev.sh local-down
 ```
-
-### Live Gemini agent
-
-The live ADK/Gemini path requires either a Gemini API key or Google Cloud Application Default Credentials.
-
-The offline test and evaluation paths above are the recommended way to explore the repository without external credentials.
 
 ## Offline evaluation
 
