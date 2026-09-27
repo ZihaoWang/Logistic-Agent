@@ -22,25 +22,24 @@ The focus is not chatbot UX. It is the engineering around production agents:
 
 ```mermaid
 flowchart LR
-    User[User] --> Agent[ADK Agent]
+    User[User] --> Runtime[Agent Runtime]
+    Model[ADK / Gemini] --> Runtime
+    Runtime --> MCP[MCP Gateway]
 
-    Agent --> MCP[MCP Gateway]
-
-    MCP --> Policy[Policy Engine]
+    MCP --> Gov[Governed Tool Execution]
+    Gov --> Policy[Policy Engine]
     Policy --> Approval[Approval Store]
-
-    MCP --> API[Logistics API]
+    Gov --> API[Logistics API]
     API --> Repo[(Repository)]
 
-    Agent --> Obs[OpenTelemetry]
-    MCP --> Obs
+    Runtime --> Obs[OpenTelemetry]
+    Gov --> Obs
     API --> Obs
 
-    Agent --> Audit[Audit Events]
+    Runtime --> Audit[Audit Events]
+    Gov --> Audit
 
-    Eval[Evaluation Runner] --> Agent
-    Eval --> MCP
-    Eval --> Policy
+    Eval[Offline Evaluation] -. Scripted model .-> Runtime
 ```
 
 The agent never accesses logistics data directly. All domain operations go through typed MCP tools and the shared governance layer. Side-effect actions such as rerouting require policy authorization and human approval.
