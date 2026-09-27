@@ -16,4 +16,29 @@ The focus is not chatbot UX. It is the engineering around production agents:
 - multiple agent identities sharing the same governance layer
 
 > **Status:** Local runtime, governance, observability, and deterministic evaluation are implemented and tested.
-> GCP deployment and GitHub delivery are in progress.
+> GCP deployment and GitHub CI/CD are in progress.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    User[User] --> Agent[ADK Agent]
+
+    Agent --> MCP[MCP Gateway]
+
+    MCP --> Policy[Policy Engine]
+    Policy --> Approval[Approval Store]
+
+    MCP --> API[Logistics API]
+    API --> Repo[(Repository)]
+
+    Agent --> Obs[OpenTelemetry]
+    MCP --> Obs
+    API --> Obs
+
+    Agent --> Audit[Audit Events]
+
+    Eval[Evaluation Runner] --> Agent
+    Eval --> MCP
+    Eval --> Policy
+```
