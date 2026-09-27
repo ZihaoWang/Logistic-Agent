@@ -59,6 +59,163 @@ The agent never accesses logistics data directly. All domain operations go throu
 | Evaluation | Deterministic scripted agent evaluation with regression baselines |
 | Testing | Unit, contract, policy, integration, and end-to-end tests |
 
+## Quick Start
+
+### Prerequisites
+
+You need:
+
+- Python 3.12
+- [`uv`](https://docs.astral.sh/uv/)
+- Docker and Docker Compose (only required for local observability)
+
+The deterministic test and evaluation paths do **not** require Gemini or GCP
+credentials.
+
+### 1. Install
+
+Clone the repository and install the development environment:
+
+```bash
+git clone <repository-url>
+cd <repository-name>
+
+./scripts/dev.sh install
+```
+
+This installs the Python dependencies and Git pre-commit hooks.
+
+### 2. Run static checks and tests
+
+```bash
+./scripts/dev.sh lint
+./scripts/dev.sh test
+```
+
+The lint command runs Ruff, mypy, and Bandit. The test suite covers unit,
+contract, policy, integration, and end-to-end behavior.
+
+### 3. Run the deterministic agent evaluation
+
+The evaluation suite uses a scripted model, so no API key is required.
+
+Run the main shipment recovery agent:
+
+```bash
+uv run python -m evals.runner \
+  --mode deterministic \
+  --agent shipment-recovery-agent \
+  --dataset all
+```
+
+Run the read-only investigation agent:
+
+```bash
+uv run python -m evals.runner \
+  --mode deterministic \
+  --agent investigation-agent \
+  --dataset all
+```
+
+The suite contains 26 cases covering normal tool use, route comparison,
+approval flows, policy violations, adversarial requests, and recovery cases.
+
+Unlike prompt-based tests, these evaluations assert on structured agent
+behavior including tool selection, arguments, execution trajectory, policy
+compliance, schema validity, task success, and cost.
+
+Both agents execute through the real governed runtime:
+
+```text
+Scripted model
+    ↓
+RunCoordinator
+    ↓
+GovernedToolExecutor
+    ↓
+MCP tools
+    ↓
+PolicyEngine
+    ↓
+Logistics backend
+```
+
+Only the model is replaced by a deterministic scripted implementation.
+
+### 4. Run the logistics API
+
+Start the deterministic logistics backend:
+
+```bash
+uv run uvicorn apps.logistics_api.main:app \
+  --host 127.0.0.1 \
+  --port 8002
+```
+
+In another terminal:
+
+```bash
+curl -sf http://127.0.0.1:8002/health
+
+curl -sf \
+  http://127.0.0.1:8002/v1/shipments/ABC123
+```
+
+You can also search for alternative routes:
+
+```bash
+curl -sf -X POST \
+  http://127.0.0.1:8002/v1/routes/search \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "shipment_id": "ABC123",
+    "constraints": {
+      "max_additional_cost_eur": 2000,
+      "max_delay_hours": 24
+    }
+  }'
+```
+
+All logistics data is synthetic and loaded from the repository.
+
+### 5. Optional: local observability
+
+Start the OpenTelemetry Collector and Jaeger:
+
+```bash
+./scripts/dev.sh local-up
+```
+
+Configure the application to export traces:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317
+```
+
+Run the application and execute a request. Traces can then be inspected in
+Jaeger at:
+
+```text
+http://127.0.0.1:16686
+```
+
+The trace shows the request across the agent, MCP execution, policy decisions,
+and backend calls.
+
+Stop the observability stack with:
+
+```bash
+./scripts/dev.sh local-down
+```
+
+### Live Gemini agent
+
+The live ADK/Gemini path requires either a Gemini API key or Google Cloud
+Application Default Credentials.
+
+The deterministic test and evaluation paths above are the recommended way to
+explore the repository without external credentials.
+
 ## Evaluation
 
 The project treats agent behavior as a testable system rather than relying on exact model wording.
